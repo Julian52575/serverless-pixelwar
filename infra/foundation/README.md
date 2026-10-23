@@ -77,9 +77,9 @@ terraform apply prd.tfplan
 ```
 
 Reconfigure with `backends/dev.hcl` before the next DEV plan using `dev.tfvars`.
-The existing `check.ps1` helper is DEV-only and does not use `-reconfigure`;
-use the explicit commands above when switching environments.
-`check.ps1 -LocalOnly` only initializes providers and validates.
+To compare the config with live GCP without
+touching Terraform, run `python3 scripts/check.py` (read-only, JSON output; see
+`scripts/README.md`). It replaces the former `check.ps1`.
 
 ## Verified results: 2026-10-23
 

@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "type": "google_compute_network",
+      "name": "default",
+      "reason": "GCP default network, intentionally outside Terraform (infra/foundation/README.md)"
+    },
+    {
+      "type": "google_compute_subnetwork",
+      "name": "default",
+      "reason": "Auto-mode subnets of the default network"
+    }
+  ]
+}
