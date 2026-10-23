@@ -213,8 +213,9 @@ jobs:
       contents: read
       id-token: write
     strategy:
+      max-parallel: 1 # dev must succeed before prd
       matrix:
-        env: [dev, prd]
+        env: [dev, prod]
     environment: ${{ matrix.env }}
     defaults:
       run:
