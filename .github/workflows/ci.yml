@@ -204,12 +204,21 @@ jobs:
           docker.io/rhysd/actionlint:1.7.12
           -color
 
-  # Every Terraform module under infra/ -- a new one is picked up without
-  # touching this workflow. `-backend=false`: validate needs the providers,
-  # not the state, so no cloud credentials are required.
+  # Mirrors terraform-ci.yml: plans infra/foundation against each real backend.
+  # OIDC needs id-token, so fork PRs (no secrets/vars) cannot pass this job.
   terraform:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        env: [dev, prd]
+    environment: ${{ matrix.env }}
+    defaults:
+      run:
+        working-directory: infra/foundation
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -219,25 +228,15 @@ jobs:
         with:
           terraform_wrapper: false
 
-      - name: Check formatting
-        run: terraform fmt -check -recursive -diff infra/
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
 
-      - name: Validate every module
-        run: |
-          set -uo pipefail
-          mapfile -t dirs < <(git ls-files -- 'infra/*.tf' | xargs -r -n1 dirname | sort -u)
-          failed=0
-          for d in "${dirs[@]}"; do
-            echo "--- $d"
-            if terraform -chdir="$d" init -backend=false -input=false >/dev/null \
-              && terraform -chdir="$d" validate; then
-              echo "ok    $d"
-            else
-              echo "::error file=$d::terraform validate failed in $d"
-              failed=1
-            fi
-          done
-          exit "$failed"
+      - run: terraform fmt -check
+      - run: terraform init -backend-config=backends/${{ matrix.env }}.hcl -input=false
+      - run: terraform validate
+      - run: terraform plan -var-file=${{ matrix.env }}.tfvars -input=false -lock-timeout=60s
 
   # Audits THIS branch's lockfile, one workspace per matrix leg, against the
   # GitHub Advisory Database with `npm audit` -- the same advisory data
