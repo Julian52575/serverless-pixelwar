@@ -29,7 +29,7 @@ python3 -m unittest discover -s infra/foundation/scripts   # tests, no credentia
 | `--env` | tfvars stem | Project (from tfvars) |
 | --- | --- | --- |
 | `dev` | `dev` | `masterpoulet-dev` |
-| `prod` | `prd` | `masterpoulet-prod` |
+| `prod` | `prod` | `masterpoulet-prod` |
 
 Requires Python ≥ 3.10 and, for live checks, `gcloud` authenticated as an account
 with `compute.networks.list`, `compute.subnetworks.list`,

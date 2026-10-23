@@ -22,8 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_VERSION = 2
 IGNORE_FILE = Path(__file__).resolve().parent / "ignore.json"
 
-# CLI environment name -> file stem used by tfvars/backends and CI ("prd").
-ENVIRONMENTS = {"dev": "dev", "prod": "prd"}
+# CLI environment name -> file stem used by tfvars/backends and CI.
+ENVIRONMENTS = {"dev": "dev", "prod": "prod"}
 
 EXIT_OK, EXIT_DIFF, EXIT_USAGE, EXIT_INCOMPLETE = 0, 1, 2, 3
 
