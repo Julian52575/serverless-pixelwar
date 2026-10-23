@@ -1,3 +1,49 @@
+# Actualisation DEV / PROD — 23 octobre 2026
+
+Cette section remplace les constats historiques ci-dessous. Branche conservée :
+`feat/c02-foundation`, HEAD `c903802`, dépôt initialement propre. Aucun commit,
+push, apply, destroy, import, changement IAM, activation API ou migration de state.
+Le projet gcloud actif reste `masterpoulet-dev`.
+
+- Configuration déjà paramétrée : `network_name`, `subnet_name`, `subnet_cidr`.
+  Aucun changement de main.tf, providers.tf, outputs.tf, backend.tf ou dev.tfvars.
+  Seule la validation interdisant PROD est retirée ; le format des IDs reste validé.
+- Ajout de `prd.tfvars` : projet `masterpoulet-prod`, région `europe-west3`, VPC
+  `masterpoulet-prod-vpc`, subnet `masterpoulet-prod-vpc-subnet`, `10.0.2.0/24`.
+- Bucket PROD unique listé dans le projet : `masterpoulet_prod_bucket`,
+  `EUROPE-WEST1`, versioning, accès uniforme et prévention d'accès public activés.
+  Liste récursive initiale vide. Configuration `backends/prd.hcl` : ce bucket,
+  préfixe `foundation/prd`. Aucun bucket créé ou modifié.
+- Bucket DEV confirmé : `masterpoulet_bucket`, préfixe `foundation/dev`.
+  Seul le commentaire obsolète de `backends/dev.hcl` est corrigé.
+- Inventaires Compute réussis : DEV possède le VPC/subnet attendus ; PROD possède
+  seulement le réseau `default` et ses subnets, sans les deux cibles Masterpoulet.
+  Les plages inventoriées ne chevauchent pas `10.0.2.0/24`. Réseau default intact.
+- `terraform fmt -recursive`, `fmt -check -recursive`, `validate -no-color` : OK.
+- Init DEV explicite avec `-reconfigure -backend-config="backends/dev.hcl"`
+  puis plan `-var-file="dev.tfvars" -detailed-exitcode` : **aucun changement**,
+  exit 0. State distant avant/après : génération `1792688481031642`,
+  métagénération 1, MD5 `FRfJAw07TWedCjfpor60nA==`, inchangés.
+- Init PROD explicite avec `-reconfigure -backend-config="backends/prd.hcl"` : OK,
+  workspace `default`, aucune ressource dans `terraform state list`.
+  Plan `-var-file="prd.tfvars" -detailed-exitcode -out="prd.tfplan"` :
+  **2 créations, 0 modification, 0 suppression**, exit 2 attendu.
+  Inspection JSON du plan enregistré : seules `google_compute_network.vpc` et
+  `google_compute_subnetwork.subnet` ont une action `create`, dans le bon projet.
+- Provider Google 7.46.1 réutilisé avec `-lockfile=readonly`. Lockfile conservé.
+  Le backend local final est PROD ; réinitialiser explicitement DEV avant usage DEV.
+- README actualisé avec les deux environnements et les commandes PowerShell.
+- GitNexus exécuté avant édition : cibles foundation/variables/docs/backend non
+  trouvées, risque UNKNOWN, appelants/processus indéterminés. Recherche textuelle
+  complémentaire : les usages Terraform concernés restent dans cette fondation.
+  Index rafraîchi avec `analyze --index-only` (459 nœuds, 995 relations, 17 flux).
+  FTS indisponible sous Windows ; aucun UNKNOWN présenté comme risque faible.
+- Les accès réseau Terraform et gcloud ont été relancés hors sandbox après
+  échecs d'accès réseau/credentials locaux. Utilisation de `gcloud.cmd` pour le
+  lanceur Windows ; aucune modification de la politique d'exécution PowerShell.
+
+---
+
 # Audit C02 Hands-on 1 — 22 octobre 2026
 
 ## Actualisation : diagnostic du backend et tentative autorisée

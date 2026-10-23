@@ -1,10 +1,10 @@
 variable "project_id" {
-  description = "Target GCP project. Production is forbidden in this foundation."
+  description = "Target GCP project, selected by the environment tfvars file."
   type        = string
 
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.project_id)) && var.project_id != "masterpoulet-prod"
-    error_message = "Use a valid GCP project ID; masterpoulet-prod is forbidden."
+    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.project_id))
+    error_message = "Use a valid GCP project ID."
   }
 }
 

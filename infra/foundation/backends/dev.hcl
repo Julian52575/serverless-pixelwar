@@ -1,3 +1,3 @@
-# Proposed name: the bucket must be created in masterpoulet-dev before init.
+# Existing development state bucket, verified in masterpoulet-dev.
 bucket = "masterpoulet_bucket"
 prefix = "foundation/dev"
