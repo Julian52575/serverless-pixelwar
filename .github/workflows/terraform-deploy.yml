@@ -1,6 +1,7 @@
 # .github/workflows/terraform-deploy.yml
 name: Terraform Deploy
 on:
+  workflow_dispatch:
   push:
     tags: ["[0-9]+.[0-9]+.[0-9]+"] # release-please tags, e.g. 1.0.0
 permissions:
@@ -12,7 +13,7 @@ jobs:
     strategy:
       max-parallel: 1 # dev must succeed before prd
       matrix:
-        env: [dev, prd]
+        env: [dev, prod]
     environment: ${{ matrix.env }} # add required reviewers on prd
     defaults:
       run:
