@@ -1,0 +1,5 @@
+project_id   = "masterpoulet-prod"
+region       = "europe-west3"
+network_name = "masterpoulet-prod-vpc"
+subnet_name  = "masterpoulet-prod-vpc-subnet"
+subnet_cidr  = "10.0.2.0/24"

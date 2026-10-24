@@ -24,10 +24,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Level 1 -- independent checks, all scheduled in parallel.
-  # ---------------------------------------------------------------------------
-
   devshell:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -56,7 +52,7 @@ jobs:
             podman-compose -f docker-compose.yml config >/dev/null
           '
 
-  # Unit tests only; the running API is exercised by `stack` (level 2).
+  # Unit tests only; the running API is exercised by `stack`.
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -208,6 +204,41 @@ jobs:
           docker.io/rhysd/actionlint:1.7.12
           -color
 
+  # Every Terraform module under infra/ -- a new one is picked up without
+  # touching this workflow. `-backend=false`: validate needs the providers,
+  # not the state, so no cloud credentials are required.
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff infra/
+
+      - name: Validate every module
+        run: |
+          set -uo pipefail
+          mapfile -t dirs < <(git ls-files -- 'infra/*.tf' | xargs -r -n1 dirname | sort -u)
+          failed=0
+          for d in "${dirs[@]}"; do
+            echo "--- $d"
+            if terraform -chdir="$d" init -backend=false -input=false >/dev/null \
+              && terraform -chdir="$d" validate; then
+              echo "ok    $d"
+            else
+              echo "::error file=$d::terraform validate failed in $d"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
   # Audits THIS branch's lockfile, one workspace per matrix leg, against the
   # GitHub Advisory Database with `npm audit` -- the same advisory data
   # Dependabot uses, resolved from the pull-request branch's own
@@ -219,9 +250,6 @@ jobs:
   # more Moderate+Low. Also fails if `npm audit` cannot be completed -- an
   # unknown posture is not a passing one. The counts and every advisory land
   # in the job summary, and the raw report uploads as an artifact, pass or fail.
-  #
-  # Not a prerequisite of `stack`: a new advisory should not block the
-  # integration run, only `ci-required`.
   dependencies-audit:
     name: dependencies-audit (${{ matrix.workspace }})
     runs-on: ubuntu-latest
@@ -256,7 +284,7 @@ jobs:
             # still a valid report, so judge the JSON body, not the status.
             ( cd "$WS" && npm audit --json ) > "$raw" 2>/dev/null || true
             jq -e '.metadata.vulnerabilities' "$raw" > /dev/null 2>&1 && break
-            [ "$attempt" -lt 3 ] && sleep 3 || true
+            if [ "$attempt" -lt 3 ]; then sleep 3; fi
           done
           if ! jq -e '.metadata.vulnerabilities' "$raw" > /dev/null 2>&1; then
             echo "::error::npm audit produced no usable report for ${WS} -- an unknown posture cannot clear the gate"
@@ -322,20 +350,9 @@ jobs:
           path: dependency-audit
           if-no-files-found: warn
 
-  # ---------------------------------------------------------------------------
-  # Level 2 -- how the services work together, once every level-1 job except
-  # dependencies-audit has passed: `stack` runs the whole docker-compose stack
-  # and calls every service; `gitnexus` checks the calls between them in the
-  # code. Both jobs run in parallel.
-  # ---------------------------------------------------------------------------
+  # How the services work together: runs the whole docker-compose stack and
+  # calls every service.
   stack:
-    needs:
-      - devshell
-      - backend
-      - frontend
-      - dockerfile-lint
-      - compose-lint
-      - workflow-lint
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -438,13 +455,6 @@ jobs:
   # the workflow token does not trigger a new run, so ci-required would never
   # report on that commit. Run `just gitnexus-docs-generate` locally instead.
   gitnexus:
-    needs:
-      - devshell
-      - backend
-      - frontend
-      - dockerfile-lint
-      - compose-lint
-      - workflow-lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -520,6 +530,7 @@ jobs:
       - dockerfile-lint
       - compose-lint
       - workflow-lint
+      - terraform
       - dependencies-audit
       - gitnexus
       - stack
@@ -528,8 +539,8 @@ jobs:
     steps:
       - name: Every required job passed
         run: |
-          # `skipped` counts too: `stack` is skipped when a level-1 job fails.
-          if printf '%s\n' '${{ join(needs.*.result, ' ') }}' | grep -Eqw 'failure|cancelled|skipped'; then
+          # Anything but `success` (failure, cancelled, skipped) fails the gate.
+          if printf '%s\n' '${{ join(needs.*.result, ' ') }}' | tr ' ' '\n' | grep -vqx 'success'; then
             echo "a required job did not succeed: ${{ join(needs.*.result, ', ') }}"
             exit 1
           fi
