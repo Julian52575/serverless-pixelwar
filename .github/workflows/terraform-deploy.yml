@@ -1,0 +1,31 @@
+# .github/workflows/terraform-deploy.yml
+name: Terraform Deploy
+on:
+  workflow_dispatch:
+  push:
+    tags: ["[0-9]+.[0-9]+.[0-9]+"] # release-please tags, e.g. 1.0.0
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1 # dev must succeed before prd
+      matrix:
+        env: [dev, prod]
+    environment: ${{ matrix.env }} # add required reviewers on prd
+    defaults:
+      run:
+        working-directory: infra/foundation
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+      - run: terraform init -backend-config=backends/${{ matrix.env }}.hcl
+      - run: terraform apply -auto-approve -var-file=${{ matrix.env }}.tfvars

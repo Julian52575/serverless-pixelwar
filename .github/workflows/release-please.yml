@@ -53,7 +53,7 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # 5.0.0
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release-please
         with:
           # The built-in token is sufficient here. Caveat: tags/releases it
@@ -70,8 +70,9 @@ jobs:
       # point for publish steps -- gate each one on the same condition
       - name: Released
         if: ${{ steps.release-please.outputs.release_created }}
-        #env:
+        env:
+          TAG_NAME: ${{ steps.release-please.outputs.tag_name }}
         #  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Published ${{ steps.release-please.outputs.tag_name }}"
+          echo "Published ${TAG_NAME}"
         # gh release upload ${{ steps.release-please.outputs.tag_name }} ./artifact/some-build-artifact.zip

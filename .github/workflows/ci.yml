@@ -26,10 +26,13 @@ concurrency:
 jobs:
   devshell:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     env:
       PODMAN_NO_SOCKET: "1" # don't spawn a Podman API socket in CI
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # No git writes in this job; do not leave the token in .git/config.
@@ -37,7 +40,7 @@ jobs:
 
       # Local composite action: check out first, then it installs Nix.
       # `nix flake check` below already evaluates the flake, so skip the warm.
-      - uses: ./.github/actions/setup-devshell
+      - uses: ./.github/actions/setup-devshell # zizmor: ignore[self-repository] -- actionlint 1.7.12 rejects `$/`
         with:
           warm: "false"
 
@@ -55,11 +58,14 @@ jobs:
   # Unit tests only; the running API is exercised by `stack`.
   backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -100,11 +106,14 @@ jobs:
   # Runs alongside `backend` (no `needs` between them = parallel scheduling).
   frontend:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -143,8 +152,11 @@ jobs:
   # reads a root .hadolint.yaml if one exists.
   dockerfile-lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -175,8 +187,11 @@ jobs:
   # The compose file parses and interpolates cleanly with the example .env.
   compose-lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -192,8 +207,11 @@ jobs:
   # on each `run:` script (bundled in the actionlint image).
   workflow-lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -204,13 +222,26 @@ jobs:
           docker.io/rhysd/actionlint:1.7.12
           -color
 
-  # Every Terraform module under infra/ -- a new one is picked up without
-  # touching this workflow. `-backend=false`: validate needs the providers,
-  # not the state, so no cloud credentials are required.
+  # Mirrors terraform-ci.yml: plans infra/foundation against each real backend.
+  # OIDC needs id-token, so fork PRs (no secrets/vars) cannot pass this job.
   terraform:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      max-parallel: 1 # dev must succeed before prd
+      matrix:
+        env: [dev, prod]
+    environment: ${{ matrix.env }}
+    defaults:
+      run:
+        working-directory: infra/foundation
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -219,25 +250,15 @@ jobs:
         with:
           terraform_wrapper: false
 
-      - name: Check formatting
-        run: terraform fmt -check -recursive -diff infra/
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
 
-      - name: Validate every module
-        run: |
-          set -uo pipefail
-          mapfile -t dirs < <(git ls-files -- 'infra/*.tf' | xargs -r -n1 dirname | sort -u)
-          failed=0
-          for d in "${dirs[@]}"; do
-            echo "--- $d"
-            if terraform -chdir="$d" init -backend=false -input=false >/dev/null \
-              && terraform -chdir="$d" validate; then
-              echo "ok    $d"
-            else
-              echo "::error file=$d::terraform validate failed in $d"
-              failed=1
-            fi
-          done
-          exit "$failed"
+      - run: terraform fmt -check
+      - run: terraform init -backend-config=backends/${{ matrix.env }}.hcl -input=false
+      - run: terraform validate
+      - run: terraform plan -var-file=${{ matrix.env }}.tfvars -input=false -lock-timeout=60s
 
   # Audits THIS branch's lockfile, one workspace per matrix leg, against the
   # GitHub Advisory Database with `npm audit` -- the same advisory data
@@ -261,6 +282,9 @@ jobs:
     env:
       WS: ${{ matrix.workspace }}
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # The PR branch head, not the merge ref -- the audit is purely this
@@ -354,11 +378,14 @@ jobs:
   # calls every service.
   stack:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     env:
       PROXY: http://127.0.0.1:8000
       DASHBOARD: http://127.0.0.1:8080
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -456,8 +483,11 @@ jobs:
   # report on that commit. Run `just gitnexus-docs-generate` locally instead.
   gitnexus:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # Full history: `detect-changes` diffs against the PR's base branch.
@@ -517,6 +547,24 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Security audit of every workflow; findings show as PR annotations.
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Audit workflows with zizmor
+        env:
+          GH_TOKEN: ${{ github.token }} # online audits (impostor commits, known-vulnerable actions)
+        run: pipx run zizmor==1.31.1 --format github .
+
   # ---------------------------------------------------------------------------
   # Single stable check for the branch ruleset to require.
   # Add a job to `needs` here to make it mandatory to the branch ruleset.
@@ -530,13 +578,17 @@ jobs:
       - dockerfile-lint
       - compose-lint
       - workflow-lint
+      - zizmor
       - terraform
       - dependencies-audit
       - gitnexus
       - stack
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
       - name: Every required job passed
         run: |
           # Anything but `success` (failure, cancelled, skipped) fails the gate.
