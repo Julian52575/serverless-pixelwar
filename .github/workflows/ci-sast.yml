@@ -272,11 +272,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          # SAST_REPORT_TOKEN (a PAT with Contents: write) is left in
-          # .git/config for the push, so a protected main accepts it without a
-          # GitHub Actions bypass. A PAT push would normally re-trigger CI; the
-          # [skip ci] marker and the .sast/report/** paths-ignore prevent that.
-          token: ${{ secrets.SAST_REPORT_TOKEN }}
+          persist-credentials: false
 
       - name: Collect tool reports
         continue-on-error: true # nothing to collect if every tool job crashed early
@@ -294,8 +290,16 @@ jobs:
             mv "$d" ".sast/report/${tool}"
           done
 
+      # Pushes with SAST_REPORT_TOKEN (a PAT with Contents: write) so a
+      # protected main accepts it without a GitHub Actions bypass. It is set
+      # only for this step, never written to .git/config. A PAT push would
+      # normally re-trigger CI; the [skip ci] marker and the .sast/report/**
+      # paths-ignore prevent that.
       - name: Commit the refreshed reports to main
+        env:
+          SAST_REPORT_TOKEN: ${{ secrets.SAST_REPORT_TOKEN }}
         run: |
+          remote="https://x-access-token:${SAST_REPORT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .sast/report
@@ -306,9 +310,9 @@ jobs:
           # [skip ci] so this push starts no further ci / ci-sast run.
           git commit -m "ci(sast): refresh SAST reports [skip ci] 🤖"
           for attempt in 1 2 3; do
-            git push origin HEAD:main && exit 0
+            git push "$remote" HEAD:main && exit 0
             echo "push rejected (attempt ${attempt}); rebasing onto main"
-            git pull --rebase --autostash origin main || break
+            git pull --rebase --autostash "$remote" main || break
           done
           echo "::warning::could not push the refreshed SAST reports; they will refresh on the next push to main"
 

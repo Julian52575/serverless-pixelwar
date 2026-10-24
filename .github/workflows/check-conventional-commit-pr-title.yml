@@ -4,7 +4,7 @@ name: check-conventional-commit-pr-title
 # rule-for-rule identical to the local hook .githooks/check-conventional-commit-msg.
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
 
 permissions:
